@@ -20,32 +20,21 @@ interface ResponseOption {
 
 // Array of prompts with target emotions for users to speak
 const SPEAKING_PROMPTS = [
-  { text: "Tell me about your day and how you're feeling right now.", emotion: "happy" },
-  { text: "Share something that made you smile recently or something that's been bothering you.", emotion: "happy" },
-  { text: "Describe a moment from this week that stood out to you, whether good or bad.", emotion: "sad" },
-  { text: "Talk about a challenge you're facing or something you're excited about.", emotion: "angry" },
-  { text: "Tell me about someone important in your life and how they make you feel.", emotion: "happy" },
-  { text: "Share a memory that brings up strong emotions, whether happy or sad.", emotion: "sad" },
-  { text: "Describe how you're feeling about work, school, or your daily routine.", emotion: "angry" },
-  { text: "Talk about something you're grateful for or something that's been difficult lately.", emotion: "happy" },
-  { text: "Share a recent experience that made you feel proud or disappointed.", emotion: "sad" },
-  { text: "Tell me about a goal you're working towards or a fear you're dealing with.", emotion: "angry" },
-  { text: "Describe a conversation you had recently that affected your mood.", emotion: "sad" },
-  { text: "Share how you're feeling about your relationships with family or friends.", emotion: "happy" },
-  { text: "Talk about something you're looking forward to or dreading in the near future.", emotion: "angry" },
-  { text: "Describe a place that makes you feel calm or a situation that stresses you out.", emotion: "sad" },
-  { text: "Share a recent decision you made and how it's making you feel.", emotion: "angry" },
-  { text: "Tell me about a hobby or activity that brings you joy or frustration.", emotion: "happy" },
-  { text: "Describe how you're feeling about your health, both physical and mental.", emotion: "sad" },
-  { text: "Share something that surprised you recently, whether pleasant or unpleasant.", emotion: "happy" },
-  { text: "Talk about a change in your life and how it's affecting your emotions.", emotion: "angry" },
-  { text: "Tell me about a dream you had or a hope you're holding onto.", emotion: "happy" }
+  { text: "“Hey, I'm feeling great today!", emotion: "happy" },
+  { text: "I am visiting my favorite country or city.", emotion: "happy" },
+  { text: "It’s time to get ready", emotion: "happy" },
+  { text: "“Hi,I look forward to seeing you tomorrow", emotion: "happy" },
+  { text: "I'm really upset. This is the third time my service has been interrupted!", emotion: "sad" },
+  { text: "I see children suffering from disease, sickness, or war.", emotion: "sad" },
+  { text: "Unfortunately,I failed my exam today", emotion: "sad" },
+  { text: "I get betrayed by a close friend or relative.", emotion: "angry" },
+  { text: "“Don’t forget the jacket", emotion: "angry" },
+  { text: "Will u tell me why?", emotion: "angry" },
+  { text: "Why does this keep happening?", emotion: "angry" },
 ];
 
 export default function Home() {
   const [isRecording, setIsRecording] = useState(false);
-  const [transcript, setTranscript] = useState("");
-  const [emotion, setEmotion] = useState("");
   const [lastDetectedEmotion, setLastDetectedEmotion] = useState("");
   const [lastTargetEmotion, setLastTargetEmotion] = useState("");
   const [emotionMatchStatus, setEmotionMatchStatus] = useState<'correct' | 'incorrect' | null>(null);
@@ -56,6 +45,12 @@ export default function Home() {
   const [currentPrompt, setCurrentPrompt] = useState<string>('');
   const [currentTargetEmotion, setCurrentTargetEmotion] = useState<string>('');
   const [showPromptCard, setShowPromptCard] = useState<boolean>(false);
+  const [currentRepetition, setCurrentRepetition] = useState<number>(0);
+  const [maxRepetitions] = useState<number>(3);
+  const [currentPromptData, setCurrentPromptData] = useState<{text: string, emotion: string} | null>(null);
+  const [showRating, setShowRating] = useState<boolean>(false);
+  const [selectedResponse, setSelectedResponse] = useState<ResponseOption | null>(null);
+  const [currentTranscript, setCurrentTranscript] = useState<string>('');
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
 
@@ -65,24 +60,32 @@ export default function Home() {
     setSessionId(newSessionId);
   }, []);
 
-  // Function to get a random prompt
-  const getRandomPrompt = () => {
-    const randomIndex = Math.floor(Math.random() * SPEAKING_PROMPTS.length);
-    return SPEAKING_PROMPTS[randomIndex];
+  // Function to get a random prompt or continue with current prompt
+  const getPromptForSession = () => {
+    // If we don't have a current prompt or we've completed all repetitions, get a new one
+    if (!currentPromptData || currentRepetition >= maxRepetitions) {
+      const randomIndex = Math.floor(Math.random() * SPEAKING_PROMPTS.length);
+      const newPrompt = SPEAKING_PROMPTS[randomIndex];
+      setCurrentPromptData(newPrompt);
+      setCurrentRepetition(1);
+      return newPrompt;
+    } else {
+      // Continue with the current prompt
+      setCurrentRepetition(prev => prev + 1);
+      return currentPromptData;
+    }
   };
 
   const handleStartRecording = async () => {
-    setTranscript("");
-    setEmotion("");
     setIsRecording(true);
     setIsLoading(false);
     setEmotionMatchStatus(null); // Clear previous emotion match status
     audioChunksRef.current = [];
     
-    // Generate and show a random prompt
-    const randomPrompt = getRandomPrompt();
-    setCurrentPrompt(randomPrompt.text);
-    setCurrentTargetEmotion(randomPrompt.emotion);
+    // Get prompt for this session (new or continuing)
+    const promptToUse = getPromptForSession();
+    setCurrentPrompt(promptToUse.text);
+    setCurrentTargetEmotion(promptToUse.emotion);
     setShowPromptCard(true);
     
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -109,7 +112,8 @@ export default function Home() {
       const response = await fetch('http://localhost:3001/transcribe', {
         method: 'POST',
         headers: {
-          'X-Session-ID': sessionId
+          'X-Session-ID': sessionId,
+          'X-Target-Emotion': currentTargetEmotion
         },
         body: formData,
       });
@@ -117,8 +121,9 @@ export default function Home() {
       const userTranscript = data.transcript || "No transcript received";
       const detectedEmotion = data.emotion || "unknown";
       
-      setTranscript(userTranscript);
-      setEmotion(detectedEmotion);
+      // Store current transcript for Excel export
+      setCurrentTranscript(userTranscript);
+      
       setLastDetectedEmotion(detectedEmotion);
       setLastTargetEmotion(currentTargetEmotion);
       
@@ -126,11 +131,11 @@ export default function Home() {
       const shouldShowEmotion = detectedEmotion.toLowerCase() === currentTargetEmotion.toLowerCase();
       setEmotionMatchStatus(shouldShowEmotion ? 'correct' : 'incorrect');
       
-      // Add user message to chat
+      // Add user message to chat with repetition info
       const userMessage: ChatMessage = {
         id: Date.now().toString() + '_user',
         type: 'user',
-        content: userTranscript,
+        content: `${userTranscript} (Attempt ${currentRepetition}/${maxRepetitions})`,
         emotion: shouldShowEmotion ? detectedEmotion : undefined,
         timestamp: new Date()
       };
@@ -172,8 +177,6 @@ export default function Home() {
       
       setIsLoading(false);
     } catch (err) {
-      setTranscript("Error transcribing audio");
-      setEmotion("unknown");
       setIsLoading(false);
       console.error("Error transcribing audio:", err);
       
@@ -307,19 +310,10 @@ export default function Home() {
   };
 
   const selectResponseOption = (option: ResponseOption) => {
-    // Add the selected response to chat
-    const assistantMessage: ChatMessage = {
-      id: Date.now().toString() + '_assistant',
-      type: 'assistant',
-      content: option.response,
-      emotion: option.emotion_stt,
-      responseType: option.response_type,
-      timestamp: new Date(),
-      audioUrl: option.audioUrl
-    };
-    
-    setChatMessages(prev => [...prev, assistantMessage]);
+    // Store the selected response and show rating
+    setSelectedResponse(option);
     setCurrentResponseOptions([]); // Clear the options after selection
+    setShowRating(true);
     
     // Auto-play the selected response audio if available
     if (option.audioUrl) {
@@ -330,9 +324,59 @@ export default function Home() {
     }
   };
 
+  const submitRating = async (rating: number) => {
+    if (!selectedResponse) return;
+    
+    // Prepare data for Excel export
+    const excelData = {
+      statement: currentPrompt,
+      actual_emotion: currentPromptData?.emotion || currentTargetEmotion,
+      detected_emotion: lastDetectedEmotion,
+      selected_response_type: selectedResponse.response_type,
+      selected_response: selectedResponse.response,
+      rating: rating,
+      transcript: currentTranscript,
+      session_id: sessionId,
+      timestamp: new Date().toISOString()
+    };
+    
+    try {
+      // Send data to backend for Excel storage
+      await fetch('http://localhost:3001/save-to-excel', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Session-ID': sessionId
+        },
+        body: JSON.stringify(excelData),
+      });
+      
+      console.log('Data saved to Excel successfully');
+    } catch (error) {
+      console.error('Error saving to Excel:', error);
+    }
+    
+    // Add the assistant message to chat
+    const assistantMessage: ChatMessage = {
+      id: Date.now().toString() + '_assistant',
+      type: 'assistant',
+      content: `${selectedResponse.response} (Rated: ${rating}/5 ⭐)`,
+      emotion: selectedResponse.emotion_stt,
+      responseType: selectedResponse.response_type,
+      timestamp: new Date(),
+      audioUrl: selectedResponse.audioUrl
+    };
+    
+    setChatMessages(prev => [...prev, assistantMessage]);
+    
+    // Reset rating state
+    setShowRating(false);
+    setSelectedResponse(null);
+  };
+
   const clearChat = async () => {
     try {
-      // Clear backend context
+      // Note: Backend no longer maintains conversation context, but keeping this call for consistency
       await fetch('http://localhost:3001/clear-context', {
         method: 'POST',
         headers: {
@@ -340,30 +384,25 @@ export default function Home() {
           'Content-Type': 'application/json'
         }
       });
-      
-      // Clear frontend state
-      setChatMessages([]);
-      setTranscript("");
-      setEmotion("");
-      setCurrentResponseOptions([]);
-      setEmotionMatchStatus(null);
-      setLastDetectedEmotion("");
-      setLastTargetEmotion("");
-      
-      // Generate new session ID
-      const newSessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-      setSessionId(newSessionId);
     } catch (error) {
-      console.error('Error clearing context:', error);
-      // Still clear frontend state even if backend call fails
-      setChatMessages([]);
-      setTranscript("");
-      setEmotion("");
-      setCurrentResponseOptions([]);
-      setEmotionMatchStatus(null);
-      setLastDetectedEmotion("");
-      setLastTargetEmotion("");
+      console.error('Error calling clear-context endpoint:', error);
     }
+    
+    // Clear frontend state
+    setChatMessages([]);
+    setCurrentResponseOptions([]);
+    setEmotionMatchStatus(null);
+    setLastDetectedEmotion("");
+    setLastTargetEmotion("");
+    setCurrentRepetition(0);
+    setCurrentPromptData(null);
+    setShowRating(false);
+    setSelectedResponse(null);
+    setCurrentTranscript('');
+    
+    // Generate new session ID for fresh start
+    const newSessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    setSessionId(newSessionId);
   };
 
   return (
@@ -392,11 +431,36 @@ export default function Home() {
         }}>
           🎧 Emotion Chat Assistant
         </h1>
-        {chatMessages.length > 0 && (
+        <div style={{ display: 'flex', gap: '10px' }}>
           <button
-            onClick={clearChat}
+            onClick={async () => {
+              try {
+                const response = await fetch('http://localhost:3001/download-excel', {
+                  method: 'GET',
+                  headers: {
+                    'X-Session-ID': sessionId
+                  }
+                });
+                
+                if (response.ok) {
+                  const blob = await response.blob();
+                  const url = window.URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = 'emotion_detector_data.xlsx';
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                  window.URL.revokeObjectURL(url);
+                } else {
+                  console.error('Failed to download Excel file');
+                }
+              } catch (error) {
+                console.error('Error downloading Excel file:', error);
+              }
+            }}
             style={{
-              background: '#FF6B6B',
+              background: '#4CAF50',
               color: '#fff',
               border: 'none',
               borderRadius: '8px',
@@ -405,9 +469,25 @@ export default function Home() {
               fontSize: '14px'
             }}
           >
-            Clear Chat
+            📊 Download Excel
           </button>
-        )}
+          {chatMessages.length > 0 && (
+            <button
+              onClick={clearChat}
+              style={{
+                background: '#FF6B6B',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '8px 16px',
+                cursor: 'pointer',
+                fontSize: '14px'
+              }}
+            >
+              Clear Chat
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Prompt Card - Shows when recording */}
@@ -431,9 +511,23 @@ export default function Home() {
           <div style={{
             fontSize: '24px',
             marginBottom: '20px',
-            color: '#007AFF'
+            color: '#007AFF',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '10px'
           }}>
             🎤 Speak Now
+            <span style={{
+              fontSize: '16px',
+              background: '#007AFF',
+              color: 'white',
+              padding: '4px 12px',
+              borderRadius: '20px',
+              fontWeight: 'bold'
+            }}>
+              {currentRepetition}/{maxRepetitions}
+            </span>
           </div>
           
           {/* Large emotion emoji */}
@@ -517,9 +611,9 @@ export default function Home() {
               <div style={{ fontSize: '48px', marginBottom: '16px' }}>🎙️</div>
               <h2 style={{ margin: '0 0 8px 0', color: '#333' }}>Welcome to Emotion Chat!</h2>
               <p style={{ margin: 0, fontSize: '16px' }}>
-                Click the microphone button below to start a conversation.
+                Click the microphone button below to practice emotional expressions.
                 <br />
-                I&apos;ll detect your emotion and respond with comfort and support.
+                Each response is independent - speak the prompt to get supportive feedback based on the target emotion.
               </p>
             </div>
           ) : (
@@ -548,12 +642,15 @@ export default function Home() {
                     {emotionMatchStatus === 'correct' ? (
                       <>
                         <span style={{ fontSize: '18px' }}>✅</span>
-                        Emotion correctly detected: {getEmotionEmoji(lastDetectedEmotion)} {lastDetectedEmotion}
+                        Attempt {currentRepetition - 1}/{maxRepetitions}: Emotion correctly detected: {getEmotionEmoji(lastDetectedEmotion)} {lastDetectedEmotion}
+                        {currentRepetition - 1 >= maxRepetitions && (
+                          <span style={{ marginLeft: '8px', fontSize: '16px' }}>🎉 Complete!</span>
+                        )}
                       </>
                     ) : (
                       <>
                         <span style={{ fontSize: '18px' }}>ℹ️</span>
-                        Target: {getEmotionEmoji(lastTargetEmotion)} {lastTargetEmotion} | 
+                        Attempt {currentRepetition - 1}/{maxRepetitions}: Target: {getEmotionEmoji(lastTargetEmotion)} {lastTargetEmotion} | 
                         Detected: {getEmotionEmoji(lastDetectedEmotion)} {lastDetectedEmotion}
                       </>
                     )}
@@ -667,6 +764,79 @@ export default function Home() {
                 </div>
               )}
               
+              {/* Rating Component */}
+              {showRating && selectedResponse && (
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'center',
+                  marginBottom: '20px'
+                }}>
+                  <div style={{
+                    background: '#fff',
+                    border: '2px solid #4CAF50',
+                    borderRadius: '20px',
+                    padding: '20px',
+                    boxShadow: '0 4px 20px rgba(76, 175, 80, 0.3)',
+                    textAlign: 'center',
+                    maxWidth: '400px',
+                    width: '100%'
+                  }}>
+                    <div style={{
+                      fontSize: '18px',
+                      fontWeight: 'bold',
+                      color: '#333',
+                      marginBottom: '10px'
+                    }}>
+                      Rate this response
+                    </div>
+                    <div style={{
+                      fontSize: '14px',
+                      color: '#666',
+                      marginBottom: '20px',
+                      fontStyle: 'italic'
+                    }}>
+                      &ldquo;{selectedResponse.response}&rdquo;
+                    </div>
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'center',
+                      gap: '10px',
+                      marginBottom: '15px'
+                    }}>
+                      {[1, 2, 3, 4, 5].map(rating => (
+                        <button
+                          key={rating}
+                          onClick={() => submitRating(rating)}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            fontSize: '32px',
+                            cursor: 'pointer',
+                            transition: 'transform 0.2s',
+                            padding: '5px'
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.transform = 'scale(1.2)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.transform = 'scale(1)';
+                          }}
+                          title={`Rate ${rating} star${rating > 1 ? 's' : ''}`}
+                        >
+                          ⭐
+                        </button>
+                      ))}
+                    </div>
+                    <div style={{
+                      fontSize: '12px',
+                      color: '#999'
+                    }}>
+                      Click a star to rate from 1 to 5
+                    </div>
+                  </div>
+                </div>
+              )}
+              
               {isLoading && (
                 <div style={{
                   display: 'flex',
@@ -765,7 +935,11 @@ export default function Home() {
               ? "Processing..." 
               : isRecording 
                 ? "Tap to stop recording" 
-                : "Tap to start recording"
+                : currentPromptData && currentRepetition < maxRepetitions
+                  ? `Continue with same prompt (${currentRepetition + 1}/${maxRepetitions})`
+                  : currentPromptData && currentRepetition >= maxRepetitions
+                    ? "All repetitions complete! Tap for new prompt"
+                    : "Tap to start recording"
             }
           </div>
         </div>
